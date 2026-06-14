@@ -89,20 +89,12 @@
       <div id="fetch_status" class="hint" style="display:none"></div>
       <div id="fetch_candidates"></div>
       <div class="grid2">
-        <div><label>株価（円）</label><input id="d_price" type="number" placeholder="2027" oninput="autoCalcRatios()"></div>
-        <div><label>PBR（倍）<span style="font-weight:400">※自動計算</span></label><input id="d_pbr" type="number" step="0.01" placeholder="0.81"></div>
+        <div><label>株価（円）</label><input id="d_price" type="number" placeholder="2027"></div>
+        <div><label>PBR（倍）</label><input id="d_pbr" type="number" step="0.01" placeholder="0.81"></div>
       </div>
       <div class="grid2">
-        <div><label>PER（予・倍）<span style="font-weight:400">※自動計算</span></label><input id="d_per" type="number" step="0.1" placeholder="12.8"></div>
+        <div><label>PER（予・倍）</label><input id="d_per" type="number" step="0.1" placeholder="12.8"></div>
         <div><label>配当利回り（%）</label><input id="d_yield" type="number" step="0.1" placeholder="3.5"></div>
-      </div>
-      <div style="padding:10px;background:#eef3f7;border-radius:8px;margin-top:4px">
-        <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:4px">📘 決算ごとに1回だけ入力（証券アプリ/決算短信で確認）</div>
-        <div class="grid2">
-          <div><label style="margin-top:0">BPS 一株純資産（円）</label><input id="d_bps" type="number" step="0.1" placeholder="2480" oninput="autoCalcRatios()"></div>
-          <div><label style="margin-top:0">EPS 一株利益（円）</label><input id="d_eps" type="number" step="0.1" placeholder="158" oninput="autoCalcRatios()"></div>
-        </div>
-        <div class="hint" style="margin-top:6px">BPS・EPSを入れておくと、最新株価から PBR=株価÷BPS、PER=株価÷EPS を自動計算します。この2つは決算（年4回）でしか変わらないので、一度入れれば当面そのままでOK。</div>
       </div>
       <div class="grid2">
         <div><label>直近高値（円）<span style="font-weight:400">※52週/取得時</span></label><input id="d_rhigh" type="number" placeholder="2087"></div>
@@ -249,14 +241,27 @@ async function fetchFundamentalsFromKabutan(code){
   if(!r0.ok){ lastDiag.kabutan='全中継で失敗: '+r0.err; return null; }
   try{
     const html=r0.body;
-    const pick=(re)=>{ const m=html.match(re); return m? parseFloat(m[1].replace(/,/g,'')) : null; };
-    const per=pick(/PER[^0-9\-]*<[^>]*>?\s*([\d,]+\.?\d*)\s*倍/i) ?? pick(/PER[\s\S]{0,40}?([\d,]+\.\d+)\s*倍/i);
-    const pbr=pick(/PBR[\s\S]{0,40}?([\d,]+\.\d+)\s*倍/i);
-    const yld=pick(/利回り[\s\S]{0,40}?([\d,]+\.\d+)\s*[%％]/);
+    // kabutanの基本情報ブロック: 「PER PBR 利回り 信用倍率」の直後に
+    //  「12.7倍 0.80倍 3.51% 6.06倍」のように数値が並ぶ。これをまとめて拾う。
+    let per=null, pbr=null, yld=null;
+    const block=html.match(/PER[\s\S]{0,60}?PBR[\s\S]{0,200}?([\d,]+\.?\d*)\s*倍[\s\S]{0,20}?([\d,]+\.?\d*)\s*倍[\s\S]{0,20}?([\d,]+\.?\d*)\s*[%％]/);
+    if(block){
+      per=parseFloat(block[1].replace(/,/g,''));
+      pbr=parseFloat(block[2].replace(/,/g,''));
+      yld=parseFloat(block[3].replace(/,/g,''));
+    }
+    // 個別フォールバック（ブロックで取れなかった項目を単独で拾う）
+    const pickNum=(re)=>{ const m=html.match(re); return m? parseFloat(m[1].replace(/,/g,'')) : null; };
+    if(per==null) per=pickNum(/PER[\s\S]{0,60}?([\d,]+\.\d+)\s*倍/i);
+    if(pbr==null) pbr=pickNum(/PBR[\s\S]{0,60}?([\d,]+\.\d+)\s*倍/i);
+    if(yld==null) yld=pickNum(/利回り[\s\S]{0,60}?([\d,]+\.\d+)\s*[%％]/);
+    // 前日終値も拾えれば拾う
+    let prevClose=null; const pc=html.match(/前日終値[\s\S]{0,40}?([\d,]+\.?\d*)/); if(pc) prevClose=parseFloat(pc[1].replace(/,/g,''));
+    // 銘柄名（タイトルから）
     let nm=null; const nmM=html.match(/<title>([^<]+?)【/); if(nmM) nm=nmM[1].trim();
     if(per==null&&pbr==null&&yld==null){ lastDiag.kabutan='指標を抽出できず'; return null; }
     lastDiag.kabutan='成功';
-    return {per, pbr, yield:yld, name: nm? `${nm} ${code}`:null, src:'kabutan'};
+    return {per, pbr, yield:yld, prevClose, name: nm? `${nm} ${code}`:null, src:'kabutan'};
   }catch(e){ lastDiag.kabutan='解析失敗: '+e.message; return null; }
 }
 
@@ -294,7 +299,12 @@ async function fetchStockData(){
     j.price=price.price; j.prevClose=price.prevClose;
     j.recentHigh=price.recentHigh; j.recentLow=price.recentLow;
   }
-  if(fund){ if(fund.per!=null)j.per=fund.per; if(fund.pbr!=null)j.pbr=fund.pbr; if(fund.yield!=null)j.yield=fund.yield; }
+  if(fund){
+    if(fund.per!=null)j.per=fund.per;
+    if(fund.pbr!=null)j.pbr=fund.pbr;
+    if(fund.yield!=null)j.yield=fund.yield;
+    if(j.prevClose==null && fund.prevClose!=null) j.prevClose=fund.prevClose;
+  }
   // チャート位置を価格と52週高安から自動推定（あくまで目安）
   if(j.price&&j.recentHigh&&j.recentLow&&j.recentHigh>j.recentLow){
     const pos=(j.price-j.recentLow)/(j.recentHigh-j.recentLow);
@@ -315,9 +325,9 @@ async function fetchStockData(){
     <div style="font-size:13px;font-weight:700">${j.name||name}</div>
     <div style="font-size:13px;font-weight:800;color:var(--accent);margin-top:4px">${priceNote}</div>
     <div style="font-size:13px;margin-top:6px;line-height:1.8">
+      PBR: <b>${j.pbr??'?'}倍</b> ／ PER: <b>${j.per??'?'}倍</b> ／ 配当: <b>${j.yield??'?'}%</b><br>
       直近高値: <b>${j.recentHigh??'?'}円</b> ／ 直近安値: <b>${j.recentLow??'?'}円</b>
-      ${j.chart?`／ 推定位置: <b>${chartLabel[j.chart]}</b>`:''}<br>
-      <span style="color:var(--muted);font-size:12px">PBR・PERは採用後、BPS/EPS欄から自動計算されます</span>
+      ${j.chart?`／ 推定位置: <b>${chartLabel[j.chart]}</b>`:''}
     </div>
     <div class="hint">${j.source}</div>
     <button class="btn" style="margin-top:10px" onclick='applyFetched(${JSON.stringify(JSON.stringify(j))})'>この値を採用してフォームに入れる</button>
@@ -328,52 +338,15 @@ function applyFetched(jstr){
   const j=JSON.parse(jstr);
   if(j.name)document.getElementById('d_name').value=j.name;
   if(j.price!=null)document.getElementById('d_price').value=j.price;
+  if(j.pbr!=null)document.getElementById('d_pbr').value=j.pbr;
+  if(j.per!=null)document.getElementById('d_per').value=j.per;
   if(j.yield!=null)document.getElementById('d_yield').value=j.yield;
   if(j.profit)document.getElementById('d_profit').value=j.profit;
   if(j.chart)document.getElementById('d_chart').value=j.chart;
   if(j.recentHigh!=null)document.getElementById('d_rhigh').value=j.recentHigh;
   if(j.recentLow!=null)document.getElementById('d_rlow').value=j.recentLow;
-  // この銘柄のBPS/EPSを過去に入れていれば呼び出す
-  loadBpsEps(extractCode(j.name||''));
-  // 株価×(保存BPS/EPS)からPBR/PERを自動計算
-  autoCalcRatios();
   document.getElementById('fetch_candidates').innerHTML='';
-  document.getElementById('fetch_status').textContent='フォームに反映しました。PBR/PERはBPS/EPSから自動計算されます。';
-}
-
-// 株価 × BPS/EPS から PBR・PER を自動計算
-function autoCalcRatios(){
-  const price=+document.getElementById('d_price').value;
-  const bps=+document.getElementById('d_bps').value;
-  const eps=+document.getElementById('d_eps').value;
-  if(price>0 && bps>0) document.getElementById('d_pbr').value=(price/bps).toFixed(2);
-  if(price>0 && eps>0) document.getElementById('d_per').value=(price/eps).toFixed(1);
-  // 入力されたBPS/EPSは銘柄ごとに保存（次回自動で戻る）
-  saveBpsEps();
-}
-// BPS/EPSを銘柄コードごとに保存
-function saveBpsEps(){
-  const code=extractCode(document.getElementById('d_name').value||'');
-  if(!code) return;
-  const bps=document.getElementById('d_bps').value;
-  const eps=document.getElementById('d_eps').value;
-  if(bps==='' && eps==='') return;
-  try{
-    const m=JSON.parse(localStorage.getItem('bpseps')||'{}');
-    m[code]={bps,eps};
-    localStorage.setItem('bpseps', JSON.stringify(m));
-  }catch(e){}
-}
-// 保存済みBPS/EPSを呼び出してフォームに入れる
-function loadBpsEps(code){
-  if(!code) return;
-  try{
-    const m=JSON.parse(localStorage.getItem('bpseps')||'{}');
-    if(m[code]){
-      if(m[code].bps) document.getElementById('d_bps').value=m[code].bps;
-      if(m[code].eps) document.getElementById('d_eps').value=m[code].eps;
-    }
-  }catch(e){}
+  document.getElementById('fetch_status').textContent='フォームに反映しました。内容を確認して診断してください。';
 }
 
 // ===== タブ切替 =====
@@ -504,15 +477,14 @@ function sendToHold(djson,ljson){
 
 function fillSample(){
   document.getElementById('d_name').value='ジェイテクト 6473';
-  document.getElementById('d_price').value=2027;
-  document.getElementById('d_bps').value=2480;
-  document.getElementById('d_eps').value=158;
-  document.getElementById('d_yield').value=3.5;
+  document.getElementById('d_price').value=1991.5;
+  document.getElementById('d_pbr').value=0.80;
+  document.getElementById('d_per').value=12.7;
+  document.getElementById('d_yield').value=3.51;
   document.getElementById('d_profit').value='down';
   document.getElementById('d_chart').value='base';
-  document.getElementById('d_rhigh').value=2087;
-  document.getElementById('d_rlow').value=1554;
-  autoCalcRatios();
+  document.getElementById('d_rhigh').value=2183.5;
+  document.getElementById('d_rlow').value=1079;
 }
 
 // ===== スクリーニング =====
