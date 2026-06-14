@@ -217,7 +217,7 @@ function buildProxyList(){
   const list=[];
   const mine=getProxyUrl();
   if(mine){
-    // 専用中継（末尾が ?url= 形式）を最優先で2回試す
+    // 専用中継（末尾が ?url= 形式）。中継側でデコードする前提でエンコードして渡す
     list.push(u => mine + encodeURIComponent(u));
   }
   // 公開中継（フォールバック）
