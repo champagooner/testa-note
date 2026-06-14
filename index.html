@@ -89,12 +89,20 @@
       <div id="fetch_status" class="hint" style="display:none"></div>
       <div id="fetch_candidates"></div>
       <div class="grid2">
-        <div><label>株価（円）</label><input id="d_price" type="number" placeholder="2027"></div>
-        <div><label>PBR（倍）</label><input id="d_pbr" type="number" step="0.01" placeholder="0.81"></div>
+        <div><label>株価（円）</label><input id="d_price" type="number" placeholder="2027" oninput="autoCalcRatios()"></div>
+        <div><label>PBR（倍）<span style="font-weight:400">※自動計算</span></label><input id="d_pbr" type="number" step="0.01" placeholder="0.81"></div>
       </div>
       <div class="grid2">
-        <div><label>PER（予・倍）</label><input id="d_per" type="number" step="0.1" placeholder="12.8"></div>
+        <div><label>PER（予・倍）<span style="font-weight:400">※自動計算</span></label><input id="d_per" type="number" step="0.1" placeholder="12.8"></div>
         <div><label>配当利回り（%）</label><input id="d_yield" type="number" step="0.1" placeholder="3.5"></div>
+      </div>
+      <div style="padding:10px;background:#eef3f7;border-radius:8px;margin-top:4px">
+        <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:4px">📘 決算ごとに1回だけ入力（証券アプリ/決算短信で確認）</div>
+        <div class="grid2">
+          <div><label style="margin-top:0">BPS 一株純資産（円）</label><input id="d_bps" type="number" step="0.1" placeholder="2480" oninput="autoCalcRatios()"></div>
+          <div><label style="margin-top:0">EPS 一株利益（円）</label><input id="d_eps" type="number" step="0.1" placeholder="158" oninput="autoCalcRatios()"></div>
+        </div>
+        <div class="hint" style="margin-top:6px">BPS・EPSを入れておくと、最新株価から PBR=株価÷BPS、PER=株価÷EPS を自動計算します。この2つは決算（年4回）でしか変わらないので、一度入れれば当面そのままでOK。</div>
       </div>
       <div class="grid2">
         <div><label>直近高値（円）<span style="font-weight:400">※52週/取得時</span></label><input id="d_rhigh" type="number" placeholder="2087"></div>
@@ -181,27 +189,44 @@
 //  指標: Twelve Data → 取れなければ kabutan を AllOrigins 経由でスクレイプ
 // ===================================================================
 
-const PROXY = "https://api.allorigins.win/raw?url="; // CORS中継
-
 // コード抽出（"村田製作所 6981" や "6981" → "6981"）
 function extractCode(s){ const m=(s||'').match(/\d{4}[A-Z0-9]?/); return m?m[0]:null; }
 
 // 取得状況の記録（失敗時に画面表示）
 let lastDiag={yahoo:'未試行', kabutan:'未試行'};
 
-// --- 株価：Yahoo Finance v8（AllOrigins中継、キー不要） ---
+// 複数のCORS中継を順番に試す。最初に成功した結果を返す。
+// 戻り: {ok:true, body:文字列} / {ok:false, err:理由}
+const PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
+  u => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`
+];
+async function fetchViaProxy(targetUrl){
+  let errs=[];
+  for(const make of PROXIES){
+    try{
+      const res=await fetch(make(targetUrl));
+      if(!res.ok){ errs.push('HTTP'+res.status); continue; }
+      const body=await res.text();
+      if(body && body.length>10) return {ok:true, body};
+      errs.push('空応答');
+    }catch(e){ errs.push((e.message||'失敗').slice(0,30)); }
+  }
+  return {ok:false, err:errs.join(' / ')};
+}
+
+// --- 株価：Yahoo Finance v8（複数中継を順に試す） ---
 async function fetchFromYahoo(code){
   if(!code){ lastDiag.yahoo='コードなし'; return null; }
+  const t=`https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=3mo&interval=1d`;
+  const r0=await fetchViaProxy(t);
+  if(!r0.ok){ lastDiag.yahoo='全中継で失敗: '+r0.err; return null; }
   try{
-    const t=`https://query1.finance.yahoo.com/v8/finance/chart/${code}.T?range=3mo&interval=1d`;
-    const res=await fetch(PROXY+encodeURIComponent(t));
-    if(!res.ok){ lastDiag.yahoo='中継HTTP'+res.status; return null; }
-    const data=await res.json();
+    const data=JSON.parse(r0.body);
     const r=data&&data.chart&&data.chart.result&&data.chart.result[0];
-    if(!r||!r.meta){
-      lastDiag.yahoo='データ形式異常: '+JSON.stringify(data).slice(0,100);
-      return null;
-    }
+    if(!r||!r.meta){ lastDiag.yahoo='データなし(コード確認): '+JSON.stringify(data).slice(0,80); return null; }
     const m=r.meta;
     lastDiag.yahoo='成功';
     return {
@@ -213,26 +238,26 @@ async function fetchFromYahoo(code){
       date: 'Yahoo最新',
       src:'Yahoo'
     };
-  }catch(e){ lastDiag.yahoo='通信失敗: '+e.message; return null; }
+  }catch(e){ lastDiag.yahoo='解析失敗: '+e.message; return null; }
 }
 
-// --- 指標：kabutan を AllOrigins 経由でスクレイプ（PBR/PER/配当/銘柄名） ---
+// --- 指標：kabutan を中継経由でスクレイプ（PBR/PER/配当/銘柄名） ---
 async function fetchFundamentalsFromKabutan(code){
   if(!code){ lastDiag.kabutan='コードなし'; return null; }
+  const t=`https://kabutan.jp/stock/?code=${code}`;
+  const r0=await fetchViaProxy(t);
+  if(!r0.ok){ lastDiag.kabutan='全中継で失敗: '+r0.err; return null; }
   try{
-    const t=`https://kabutan.jp/stock/?code=${code}`;
-    const res=await fetch(PROXY+encodeURIComponent(t));
-    if(!res.ok){ lastDiag.kabutan='中継HTTP'+res.status; return null; }
-    const html=await res.text();
+    const html=r0.body;
     const pick=(re)=>{ const m=html.match(re); return m? parseFloat(m[1].replace(/,/g,'')) : null; };
     const per=pick(/PER[^0-9\-]*<[^>]*>?\s*([\d,]+\.?\d*)\s*倍/i) ?? pick(/PER[\s\S]{0,40}?([\d,]+\.\d+)\s*倍/i);
     const pbr=pick(/PBR[\s\S]{0,40}?([\d,]+\.\d+)\s*倍/i);
     const yld=pick(/利回り[\s\S]{0,40}?([\d,]+\.\d+)\s*[%％]/);
     let nm=null; const nmM=html.match(/<title>([^<]+?)【/); if(nmM) nm=nmM[1].trim();
-    if(per==null&&pbr==null&&yld==null){ lastDiag.kabutan='指標を抽出できず(HTML取得は'+(html.length>500?'OK':'失敗')+')'; return null; }
+    if(per==null&&pbr==null&&yld==null){ lastDiag.kabutan='指標を抽出できず'; return null; }
     lastDiag.kabutan='成功';
     return {per, pbr, yield:yld, name: nm? `${nm} ${code}`:null, src:'kabutan'};
-  }catch(e){ lastDiag.kabutan='通信失敗: '+e.message; return null; }
+  }catch(e){ lastDiag.kabutan='解析失敗: '+e.message; return null; }
 }
 
 async function fetchStockData(){
@@ -290,9 +315,9 @@ async function fetchStockData(){
     <div style="font-size:13px;font-weight:700">${j.name||name}</div>
     <div style="font-size:13px;font-weight:800;color:var(--accent);margin-top:4px">${priceNote}</div>
     <div style="font-size:13px;margin-top:6px;line-height:1.8">
-      PBR: <b>${j.pbr??'?'}倍</b> ／ PER: <b>${j.per??'?'}倍</b> ／ 配当: <b>${j.yield??'?'}%</b><br>
       直近高値: <b>${j.recentHigh??'?'}円</b> ／ 直近安値: <b>${j.recentLow??'?'}円</b>
-      ${j.chart?`／ 推定位置: <b>${chartLabel[j.chart]}</b>`:''}
+      ${j.chart?`／ 推定位置: <b>${chartLabel[j.chart]}</b>`:''}<br>
+      <span style="color:var(--muted);font-size:12px">PBR・PERは採用後、BPS/EPS欄から自動計算されます</span>
     </div>
     <div class="hint">${j.source}</div>
     <button class="btn" style="margin-top:10px" onclick='applyFetched(${JSON.stringify(JSON.stringify(j))})'>この値を採用してフォームに入れる</button>
@@ -303,15 +328,52 @@ function applyFetched(jstr){
   const j=JSON.parse(jstr);
   if(j.name)document.getElementById('d_name').value=j.name;
   if(j.price!=null)document.getElementById('d_price').value=j.price;
-  if(j.pbr!=null)document.getElementById('d_pbr').value=j.pbr;
-  if(j.per!=null)document.getElementById('d_per').value=j.per;
   if(j.yield!=null)document.getElementById('d_yield').value=j.yield;
   if(j.profit)document.getElementById('d_profit').value=j.profit;
   if(j.chart)document.getElementById('d_chart').value=j.chart;
   if(j.recentHigh!=null)document.getElementById('d_rhigh').value=j.recentHigh;
   if(j.recentLow!=null)document.getElementById('d_rlow').value=j.recentLow;
+  // この銘柄のBPS/EPSを過去に入れていれば呼び出す
+  loadBpsEps(extractCode(j.name||''));
+  // 株価×(保存BPS/EPS)からPBR/PERを自動計算
+  autoCalcRatios();
   document.getElementById('fetch_candidates').innerHTML='';
-  document.getElementById('fetch_status').textContent='フォームに反映しました。内容を確認して診断してください。';
+  document.getElementById('fetch_status').textContent='フォームに反映しました。PBR/PERはBPS/EPSから自動計算されます。';
+}
+
+// 株価 × BPS/EPS から PBR・PER を自動計算
+function autoCalcRatios(){
+  const price=+document.getElementById('d_price').value;
+  const bps=+document.getElementById('d_bps').value;
+  const eps=+document.getElementById('d_eps').value;
+  if(price>0 && bps>0) document.getElementById('d_pbr').value=(price/bps).toFixed(2);
+  if(price>0 && eps>0) document.getElementById('d_per').value=(price/eps).toFixed(1);
+  // 入力されたBPS/EPSは銘柄ごとに保存（次回自動で戻る）
+  saveBpsEps();
+}
+// BPS/EPSを銘柄コードごとに保存
+function saveBpsEps(){
+  const code=extractCode(document.getElementById('d_name').value||'');
+  if(!code) return;
+  const bps=document.getElementById('d_bps').value;
+  const eps=document.getElementById('d_eps').value;
+  if(bps==='' && eps==='') return;
+  try{
+    const m=JSON.parse(localStorage.getItem('bpseps')||'{}');
+    m[code]={bps,eps};
+    localStorage.setItem('bpseps', JSON.stringify(m));
+  }catch(e){}
+}
+// 保存済みBPS/EPSを呼び出してフォームに入れる
+function loadBpsEps(code){
+  if(!code) return;
+  try{
+    const m=JSON.parse(localStorage.getItem('bpseps')||'{}');
+    if(m[code]){
+      if(m[code].bps) document.getElementById('d_bps').value=m[code].bps;
+      if(m[code].eps) document.getElementById('d_eps').value=m[code].eps;
+    }
+  }catch(e){}
 }
 
 // ===== タブ切替 =====
@@ -443,13 +505,14 @@ function sendToHold(djson,ljson){
 function fillSample(){
   document.getElementById('d_name').value='ジェイテクト 6473';
   document.getElementById('d_price').value=2027;
-  document.getElementById('d_pbr').value=0.81;
-  document.getElementById('d_per').value=12.8;
+  document.getElementById('d_bps').value=2480;
+  document.getElementById('d_eps').value=158;
   document.getElementById('d_yield').value=3.5;
   document.getElementById('d_profit').value='down';
   document.getElementById('d_chart').value='base';
   document.getElementById('d_rhigh').value=2087;
   document.getElementById('d_rlow').value=1554;
+  autoCalcRatios();
 }
 
 // ===== スクリーニング =====
