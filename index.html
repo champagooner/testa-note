@@ -273,6 +273,18 @@ async function fetchFundamentalsFromKabutan(code){
   if(!r0.ok){ lastDiag.kabutan='全中継で失敗: '+r0.err; return null; }
   try{
     const html=r0.body;
+    // 【デバッグ】HTMLが取れているか、PBRがどう入っているかを記録
+    let dbg='HTML長='+html.length;
+    const pbrIdx=html.indexOf('PBR');
+    if(pbrIdx>=0){
+      dbg+=' / PBR周辺: '+html.slice(pbrIdx, pbrIdx+80).replace(/\s+/g,' ');
+    } else {
+      dbg+=' / PBRの文字なし';
+      // スマホ版や別ページが返っていないかタイトルを見る
+      const tm=html.match(/<title>([^<]*)<\/title>/);
+      if(tm) dbg+=' / title='+tm[1].slice(0,40);
+    }
+    window.__kabutanDebug=dbg;
     // kabutanの基本情報ブロック: 「PER PBR 利回り 信用倍率」の直後に
     //  「12.7倍 0.80倍 3.51% 6.06倍」のように数値が並ぶ。これをまとめて拾う。
     let per=null, pbr=null, yld=null;
@@ -291,7 +303,7 @@ async function fetchFundamentalsFromKabutan(code){
     let prevClose=null; const pc=html.match(/前日終値[\s\S]{0,40}?([\d,]+\.?\d*)/); if(pc) prevClose=parseFloat(pc[1].replace(/,/g,''));
     // 銘柄名（タイトルから）
     let nm=null; const nmM=html.match(/<title>([^<]+?)【/); if(nmM) nm=nmM[1].trim();
-    if(per==null&&pbr==null&&yld==null){ lastDiag.kabutan='指標を抽出できず'; return null; }
+    if(per==null&&pbr==null&&yld==null){ lastDiag.kabutan='指標を抽出できず ['+(window.__kabutanDebug||'')+']'; return null; }
     lastDiag.kabutan='成功';
     return {per, pbr, yield:yld, prevClose, name: nm? `${nm} ${code}`:null, src:'kabutan'};
   }catch(e){ lastDiag.kabutan='解析失敗: '+e.message; return null; }
@@ -345,8 +357,9 @@ async function fetchStockData(){
   j.source=`株価=${price?price.src+(price.date?'('+price.date+')':''):'取得不可'} / 指標=${fund?'kabutan':'取得不可'}`;
   j.confidence = price?'high':'medium';
 
-  st.textContent='✅ 取得しました。内容を確認して「採用」を。発注前は必ず証券アプリの板で最終確認を。'
-    +(srcNote?'（'+srcNote+'）':'');
+  st.innerHTML='✅ 取得しました。内容を確認して「採用」を。発注前は必ず証券アプリの板で最終確認を。'
+    +(srcNote?'（'+srcNote+'）':'')
+    +(!fund?'<br><span style="color:var(--red)">⚠ 指標(kabutan)が取れませんでした → '+lastDiag.kabutan+'</span>':'');
 
   const profitLabel={up:'増益',flat:'横ばい',down:'減益',loss:'赤字'};
   const chartLabel={base:'底値圏/持ち合い',rise:'上昇途中',high:'急騰後の高値圏'};
