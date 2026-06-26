@@ -486,7 +486,7 @@ function initTokenClient(clientId) {
         'サインインに失敗しました: ' + (err.message || JSON.stringify(err)), 'err');
     }
   });
-  tokenClient.requestAccessToken();
+  tokenClient.requestAccessToken({ prompt: 'consent' });
 }
 
 function onTokenReceived(resp) {
