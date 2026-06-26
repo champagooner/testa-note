@@ -452,9 +452,8 @@ function saveClientId(id) {
 }
 
 // ============================================================
-//  GOOGLE OAUTH
+//  GOOGLE OAUTH（リダイレクト方式）
 // ============================================================
-let tokenClient = null;
 
 function connectGoogle() {
   const clientId = document.getElementById('client_id').value.trim();
@@ -464,55 +463,58 @@ function connectGoogle() {
   }
   saveClientId(clientId);
 
-  // Load GIS if not yet loaded
-  if (!window.google || !window.google.accounts) {
-    const sc = document.createElement('script');
-    sc.src = 'https://accounts.google.com/gsi/client';
-    sc.onload = () => initTokenClient(clientId);
-    sc.onerror = () => showStatus(document.getElementById('auth_status'), 'Google認証ライブラリの読み込みに失敗しました', 'err');
-    document.head.appendChild(sc);
-  } else {
-    initTokenClient(clientId);
-  }
-}
-
-function initTokenClient(clientId) {
-  tokenClient = google.accounts.oauth2.initTokenClient({
+  const redirectUri = location.origin + location.pathname;
+  const params = new URLSearchParams({
     client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'token',
     scope: 'https://www.googleapis.com/auth/photoslibrary.readonly',
-    callback: onTokenReceived,
-    error_callback: (err) => {
-      showStatus(document.getElementById('auth_status'),
-        'サインインに失敗しました: ' + (err.message || JSON.stringify(err)), 'err');
-    }
+    prompt: 'consent',
+    include_granted_scopes: 'false'
   });
-  tokenClient.requestAccessToken({ prompt: 'consent' });
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
 }
 
-async function onTokenReceived(resp) {
-  if (resp.error) {
-    showStatus(document.getElementById('auth_status'), 'エラー: ' + resp.error, 'err');
+// ページ読み込み時にURLハッシュからトークンを取得
+async function checkOAuthResponse() {
+  const hash = location.hash.substring(1);
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  const token = params.get('access_token');
+  const error = params.get('error');
+  history.replaceState(null, '', location.pathname);
+
+  if (error) {
+    showStatus(document.getElementById('auth_status'), 'サインインエラー: ' + error, 'err');
     return;
   }
+  if (!token) return;
 
-  // トークンに含まれるスコープを確認
+  loadClientId();
+  await onTokenReceived(token);
+}
+
+async function onTokenReceived(token) {
+  // スコープを確認
   try {
-    const info = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${resp.access_token}`).then(r => r.json());
+    const info = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`).then(r => r.json());
     const scopes = info.scope || '';
     if (!scopes.includes('photoslibrary')) {
       showStatus(document.getElementById('auth_status'),
         `⚠️ Google フォトの権限が含まれていません。<br><br>`+
         `<b>取得されたスコープ:</b><br><span style="font-size:11px;word-break:break-all">${scopes || 'なし'}</span><br><br>`+
-        `<b>対処法：</b><br>`+
-        `① Google Cloud Console →「Google Auth Platform」→「データアクセス」<br>`+
-        `② <code>photoslibrary.readonly</code> にチェックが入っているか確認<br>`+
-        `③ 保存後、<a href="https://myaccount.google.com/permissions" target="_blank" style="color:#8ab4f8">こちら</a>でアプリのアクセスを削除してから再度サインイン`,
+        `Google Cloud Console →「クライアント」→ 作成したクライアントを開き、`+
+        `<b>「承認済みのリダイレクト URI」</b>に<br>`+
+        `<code style="background:#111;padding:2px 4px">http://localhost:8080/wallpaper.html</code><br>を追加して保存後、再度サインインしてください。`,
         'err');
       return;
     }
-  } catch(e) {}
+  } catch(e) {
+    showStatus(document.getElementById('auth_status'), 'トークン検証エラー: ' + e.message, 'err');
+    return;
+  }
 
-  accessToken = resp.access_token;
+  accessToken = token;
   showStatus(document.getElementById('auth_status'), '✅ Google Photos に接続しました', 'ok');
   document.getElementById('user_badge').style.display = 'block';
   document.getElementById('disconnectBtn').style.display = 'block';
@@ -923,6 +925,7 @@ function downloadWallpaper() {
 //  INIT
 // ============================================================
 loadClientId();
+checkOAuthResponse();
 </script>
 </body>
 </html>
