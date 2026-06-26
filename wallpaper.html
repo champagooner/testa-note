@@ -489,11 +489,29 @@ function initTokenClient(clientId) {
   tokenClient.requestAccessToken({ prompt: 'consent' });
 }
 
-function onTokenReceived(resp) {
+async function onTokenReceived(resp) {
   if (resp.error) {
     showStatus(document.getElementById('auth_status'), 'エラー: ' + resp.error, 'err');
     return;
   }
+
+  // トークンに含まれるスコープを確認
+  try {
+    const info = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${resp.access_token}`).then(r => r.json());
+    const scopes = info.scope || '';
+    if (!scopes.includes('photoslibrary')) {
+      showStatus(document.getElementById('auth_status'),
+        `⚠️ Google フォトの権限が含まれていません。<br><br>`+
+        `<b>取得されたスコープ:</b><br><span style="font-size:11px;word-break:break-all">${scopes || 'なし'}</span><br><br>`+
+        `<b>対処法：</b><br>`+
+        `① Google Cloud Console →「Google Auth Platform」→「データアクセス」<br>`+
+        `② <code>photoslibrary.readonly</code> にチェックが入っているか確認<br>`+
+        `③ 保存後、<a href="https://myaccount.google.com/permissions" target="_blank" style="color:#8ab4f8">こちら</a>でアプリのアクセスを削除してから再度サインイン`,
+        'err');
+      return;
+    }
+  } catch(e) {}
+
   accessToken = resp.access_token;
   showStatus(document.getElementById('auth_status'), '✅ Google Photos に接続しました', 'ok');
   document.getElementById('user_badge').style.display = 'block';
