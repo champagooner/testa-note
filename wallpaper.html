@@ -283,6 +283,7 @@
       <label>OAuth 2.0 Client ID</label>
       <input type="text" id="client_id" placeholder="xxxx.apps.googleusercontent.com">
       <div class="hint-text" style="font-size:11px;color:var(--muted);margin-top:4px">ページをリロードしても保存されます</div>
+      <div id="redirect_uri_box"></div>
 
       <div style="margin-top:10px">
         <button class="btn btn-google" id="connectBtn" onclick="connectGoogle()">
@@ -455,6 +456,10 @@ function saveClientId(id) {
 //  GOOGLE OAUTH（リダイレクト方式）
 // ============================================================
 
+function getRedirectUri() {
+  return location.origin + location.pathname;
+}
+
 function connectGoogle() {
   const clientId = document.getElementById('client_id').value.trim();
   if (!clientId) {
@@ -463,7 +468,7 @@ function connectGoogle() {
   }
   saveClientId(clientId);
 
-  const redirectUri = location.origin + location.pathname;
+  const redirectUri = getRedirectUri();
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -473,6 +478,21 @@ function connectGoogle() {
     include_granted_scopes: 'false'
   });
   location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+}
+
+// 起動時に、このアプリが使うリダイレクトURIを画面に表示する
+function showRedirectUri() {
+  const uri = getRedirectUri();
+  const box = document.getElementById('redirect_uri_box');
+  if (box) {
+    box.innerHTML =
+      `<div class="status-box status-info" style="margin-top:8px">`+
+      `<b>このアプリが使うリダイレクト URI（重要）</b><br>`+
+      `下の値を Google Cloud Console の「承認済みのリダイレクト URI」に<b>そのまま</b>登録してください：<br>`+
+      `<code style="display:block;background:#0a0c12;padding:6px 8px;border-radius:4px;margin-top:6px;word-break:break-all;color:#8ab4f8">${uri}</code>`+
+      `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:auto" onclick="navigator.clipboard.writeText('${uri}');this.textContent='コピーしました'">📋 コピー</button>`+
+      `</div>`;
+  }
 }
 
 // ページ読み込み時にURLハッシュからトークンを取得
@@ -925,6 +945,7 @@ function downloadWallpaper() {
 //  INIT
 // ============================================================
 loadClientId();
+showRedirectUri();
 checkOAuthResponse();
 </script>
 </body>
