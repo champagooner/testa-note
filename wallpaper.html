@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Google Photos 壁紙メーカー</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --card: #22263a;
+    --border: #2e3350;
+    --text: #e8eaf0;
+    --muted: #7b82a0;
+    --accent: #4285f4;
+    --accent2: #34a853;
+    --accent3: #fbbc04;
+    --accent4: #ea4335;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== HEADER ===== */
+  header {
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .logo-icon {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #4285f4 0%, #34a853 50%, #fbbc04 75%, #ea4335 100%);
+    font-size: 20px;
+  }
+  header h1 { font-size: 18px; font-weight: 700; }
+  header p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .header-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+  /* ===== LAYOUT ===== */
+  .main { display: flex; height: calc(100vh - 73px); }
+  .sidebar {
+    width: 320px; flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 16px;
+  }
+  .preview-area {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #0a0c12;
+    padding: 24px;
+    overflow: hidden;
+  }
+
+  /* ===== SIDEBAR SECTIONS ===== */
+  .section { margin-bottom: 20px; }
+  .section-title {
+    font-size: 11px; font-weight: 700;
+    color: var(--muted); letter-spacing: .12em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ===== FORM ELEMENTS ===== */
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; margin-top: 10px; }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"], select {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color .2s;
+  }
+  input[type="text"]:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .range-row { display: flex; align-items: center; gap: 8px; }
+  .range-val {
+    min-width: 32px; text-align: right;
+    font-size: 12px; font-weight: 700; color: var(--text);
+  }
+
+  /* ===== BUTTONS ===== */
+  .btn {
+    padding: 9px 16px;
+    border: none; border-radius: 8px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: .15s;
+    font-family: inherit;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #3b78e7; }
+  .btn-success { background: var(--accent2); color: #fff; width: 100%; justify-content: center; }
+  .btn-success:hover { background: #2d9349; }
+  .btn-danger { background: var(--accent4); color: #fff; }
+  .btn-ghost {
+    background: var(--card);
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    width: 100%; justify-content: center;
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-google {
+    background: #fff;
+    color: #444;
+    border: 1.5px solid #ddd;
+    width: 100%; justify-content: center;
+    font-size: 13.5px;
+  }
+  .btn-google:hover { background: #f5f5f5; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+  /* ===== STATUS / ALERTS ===== */
+  .status-box {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+  .status-info { background: #1a2744; border: 1px solid #2a4080; color: #8ab4f8; }
+  .status-ok { background: #1a2f1e; border: 1px solid #2d5835; color: #81c784; }
+  .status-warn { background: #2f2610; border: 1px solid #5c4a10; color: #ffcc02; }
+  .status-err { background: #2f1414; border: 1px solid #5c2020; color: #ef9a9a; }
+
+  /* ===== CHIP TOGGLES ===== */
+  .chip-group { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px; font-weight: 700;
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    cursor: pointer; transition: .15s;
+  }
+  .chip.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  /* ===== PREVIEW CANVAS ===== */
+  #canvas {
+    max-width: 100%;
+    max-height: calc(100vh - 73px - 48px - 48px);
+    border-radius: 8px;
+    box-shadow: 0 8px 48px rgba(0,0,0,.6);
+    image-rendering: auto;
+  }
+  .preview-msg {
+    color: var(--muted);
+    font-size: 14px;
+    text-align: center;
+    line-height: 2;
+  }
+  .preview-msg span { font-size: 40px; display: block; margin-bottom: 8px; }
+
+  /* ===== PROGRESS ===== */
+  .progress-wrap { margin-top: 10px; }
+  .progress-bar-bg {
+    height: 6px; background: var(--border);
+    border-radius: 3px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 3px;
+    transition: width .3s;
+    width: 0%;
+  }
+  .progress-label { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+  /* ===== PHOTO GRID PREVIEW ===== */
+  .thumb-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    margin-top: 10px;
+  }
+  .thumb {
+    aspect-ratio: 1;
+    border-radius: 4px;
+    object-fit: cover;
+    width: 100%;
+    background: var(--border);
+  }
+
+  /* ===== SETUP BOX ===== */
+  .setup-box {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .setup-box h3 { font-size: 13px; font-weight: 800; margin-bottom: 6px; }
+  .setup-box p { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .setup-box ol { margin: 8px 0 0 16px; font-size: 12px; color: var(--muted); line-height: 2; }
+  .setup-box a { color: var(--accent); }
+
+  .divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+  /* ===== CANVAS DL BAR ===== */
+  .dl-bar {
+    display: flex; gap: 10px; align-items: center;
+    margin-top: 16px;
+  }
+  .res-tag {
+    padding: 4px 10px; border-radius: 6px;
+    background: var(--card); border: 1px solid var(--border);
+    font-size: 11px; color: var(--muted);
+  }
+
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-icon">🖼️</div>
+  <div>
+    <h1>Google Photos 壁紙メーカー</h1>
+    <p>あなたの写真を敷き詰めてデスクトップ背景を生成</p>
+  </div>
+  <div class="header-right">
+    <div id="user_badge" style="display:none; font-size:12px; color:var(--accent2)">● 接続中</div>
+    <button class="btn btn-danger btn-sm" id="disconnectBtn" onclick="disconnect()" style="display:none">切断</button>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- ===== SIDEBAR ===== -->
+  <div class="sidebar">
+
+    <!-- STEP 1: SETUP -->
+    <div class="section" id="step_setup">
+      <div class="section-title">① Google Photos に接続</div>
+
+      <div class="setup-box">
+        <h3>Client ID の取得（初回のみ）</h3>
+        <ol>
+          <li><a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> を開く</li>
+          <li>プロジェクトを作成 → 「APIとサービス」→「認証情報」</li>
+          <li>「OAuth 2.0 クライアントID」を作成（ウェブアプリ）</li>
+          <li>承認済みのリダイレクトURIに、このページのURLを追加</li>
+          <li>Photos Library API を有効化</li>
+        </ol>
+      </div>
+
+      <label>OAuth 2.0 Client ID</label>
+      <input type="text" id="client_id" placeholder="xxxx.apps.googleusercontent.com">
+      <div class="hint-text" style="font-size:11px;color:var(--muted);margin-top:4px">ページをリロードしても保存されます</div>
+
+      <div style="margin-top:10px">
+        <button class="btn btn-google" id="connectBtn" onclick="connectGoogle()">
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          Google でサインイン
+        </button>
+      </div>
+      <div id="auth_status"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- STEP 2: PHOTO SETTINGS -->
+    <div class="section" id="step_photos" style="opacity:.35; pointer-events:none">
+      <div class="section-title">② 写真の選択</div>
+
+      <label>カテゴリ</label>
+      <div class="chip-group">
+        <div class="chip on" data-cat="LANDSCAPES" onclick="toggleCat(this)">風景</div>
+        <div class="chip" data-cat="TRAVEL" onclick="toggleCat(this)">旅行</div>
+        <div class="chip" data-cat="NATURE" onclick="toggleCat(this)">自然</div>
+        <div class="chip" data-cat="CITYSCAPES" onclick="toggleCat(this)">都市</div>
+        <div class="chip" data-cat="SUNRISES_AND_SUNSETS" onclick="toggleCat(this)">夕焼け</div>
+        <div class="chip" data-cat="BEACHES" onclick="toggleCat(this)">海岸</div>
+        <div class="chip" data-cat="" onclick="toggleCat(this)">すべて</div>
+      </div>
+
+      <label>アルバムから選ぶ（任意）</label>
+      <select id="album_sel" onchange="onAlbumChange()">
+        <option value="">カテゴリフィルタを使う</option>
+      </select>
+
+      <label>取得枚数（多いほどバリエーション豊か）</label>
+      <div class="range-row">
+        <input type="range" id="photo_count" min="20" max="200" step="10" value="60" oninput="updateRangeVal('photo_count','photo_count_val')">
+        <span class="range-val" id="photo_count_val">60</span>
+      </div>
+
+      <button class="btn btn-ghost" style="margin-top:12px" onclick="loadPhotos()">
+        📷 写真を読み込む
+      </button>
+      <div id="photo_status"></div>
+      <div id="thumb_preview"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- STEP 3: LAYOUT SETTINGS -->
+    <div class="section" id="step_layout" style="opacity:.35; pointer-events:none">
+      <div class="section-title">③ レイアウト設定</div>
+
+      <label>壁紙の解像度</label>
+      <select id="resolution">
+        <option value="1920x1080">1920×1080 (FHD)</option>
+        <option value="2560x1440">2560×1440 (QHD)</option>
+        <option value="3840x2160">3840×2160 (4K)</option>
+        <option value="1280x800">1280×800 (MacBook)</option>
+        <option value="2560x1600">2560×1600 (MacBook Retina)</option>
+      </select>
+
+      <label>レイアウトスタイル</label>
+      <select id="layout_style" onchange="updateLayoutPreview()">
+        <option value="grid">グリッド（均等）</option>
+        <option value="brick">ブリック（レンガ積み）</option>
+        <option value="mosaic">モザイク（ランダムサイズ）</option>
+        <option value="focus">メイン＋サブグリッド</option>
+      </select>
+
+      <label>列数</label>
+      <div class="range-row">
+        <input type="range" id="cols" min="2" max="12" step="1" value="6" oninput="updateRangeVal('cols','cols_val');updateLayoutPreview()">
+        <span class="range-val" id="cols_val">6</span>
+      </div>
+
+      <label>隙間（px）</label>
+      <div class="range-row">
+        <input type="range" id="gap" min="0" max="20" step="1" value="3" oninput="updateRangeVal('gap','gap_val')">
+        <span class="range-val" id="gap_val">3</span>
+      </div>
+
+      <label>角の丸み（px）</label>
+      <div class="range-row">
+        <input type="range" id="corner" min="0" max="20" step="1" value="6" oninput="updateRangeVal('corner','corner_val')">
+        <span class="range-val" id="corner_val">6</span>
+      </div>
+
+      <label>暗め効果（壁紙を暗くしてテキストを見やすく）</label>
+      <div class="range-row">
+        <input type="range" id="dim" min="0" max="70" step="5" value="0" oninput="updateRangeVal('dim','dim_val')">
+        <span class="range-val" id="dim_val">0</span><span style="font-size:11px;color:var(--muted)">%</span>
+      </div>
+
+      <div style="margin-top:14px">
+        <button class="btn btn-success" onclick="generateWallpaper()" id="genBtn" disabled>
+          🎨 壁紙を生成
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== PREVIEW AREA ===== -->
+  <div class="preview-area">
+    <div id="preview_placeholder" class="preview-msg">
+      <span>🖼️</span>
+      Google Photos に接続して<br>
+      写真を読み込むと、ここにプレビューが表示されます
+    </div>
+    <canvas id="canvas" style="display:none"></canvas>
+    <div id="progress_area" style="display:none; width:100%; max-width:600px; margin-top:16px">
+      <div class="progress-wrap">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="prog_fill"></div></div>
+        <div class="progress-label" id="prog_label">準備中...</div>
+      </div>
+    </div>
+    <div class="dl-bar" id="dl_bar" style="display:none">
+      <span class="res-tag" id="res_tag">1920×1080</span>
+      <button class="btn btn-primary" onclick="downloadWallpaper()">
+        ⬇ PNGでダウンロード
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="generateWallpaper()">
+        🔀 シャッフル再生成
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+//  STATE
+// ============================================================
+let accessToken = null;
+let photos = [];            // {baseUrl, id, width, height}
+let selectedCats = new Set(['LANDSCAPES']);
+let selectedAlbumId = '';
+
+// ============================================================
+//  UTILS
+// ============================================================
+function updateRangeVal(inputId, valId) {
+  document.getElementById(valId).textContent = document.getElementById(inputId).value;
+}
+function showStatus(el, msg, type='info') {
+  el.innerHTML = `<div class="status-box status-${type}">${msg}</div>`;
+}
+function setStep(step, enabled) {
+  const el = document.getElementById('step_' + step);
+  el.style.opacity = enabled ? '1' : '.35';
+  el.style.pointerEvents = enabled ? '' : 'none';
+}
+
+// ============================================================
+//  LOCALSTORAGE
+// ============================================================
+function loadClientId() {
+  const saved = localStorage.getItem('gp_client_id');
+  if (saved) document.getElementById('client_id').value = saved;
+}
+function saveClientId(id) {
+  localStorage.setItem('gp_client_id', id);
+}
+
+// ============================================================
+//  GOOGLE OAUTH
+// ============================================================
+let tokenClient = null;
+
+function connectGoogle() {
+  const clientId = document.getElementById('client_id').value.trim();
+  if (!clientId) {
+    showStatus(document.getElementById('auth_status'), 'Client ID を入力してください', 'warn');
+    return;
+  }
+  saveClientId(clientId);
+
+  // Load GIS if not yet loaded
+  if (!window.google || !window.google.accounts) {
+    const sc = document.createElement('script');
+    sc.src = 'https://accounts.google.com/gsi/client';
+    sc.onload = () => initTokenClient(clientId);
+    sc.onerror = () => showStatus(document.getElementById('auth_status'), 'Google認証ライブラリの読み込みに失敗しました', 'err');
+    document.head.appendChild(sc);
+  } else {
+    initTokenClient(clientId);
+  }
+}
+
+function initTokenClient(clientId) {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/photoslibrary.readonly',
+    callback: onTokenReceived,
+    error_callback: (err) => {
+      showStatus(document.getElementById('auth_status'),
+        'サインインに失敗しました: ' + (err.message || JSON.stringify(err)), 'err');
+    }
+  });
+  tokenClient.requestAccessToken();
+}
+
+function onTokenReceived(resp) {
+  if (resp.error) {
+    showStatus(document.getElementById('auth_status'), 'エラー: ' + resp.error, 'err');
+    return;
+  }
+  accessToken = resp.access_token;
+  showStatus(document.getElementById('auth_status'), '✅ Google Photos に接続しました', 'ok');
+  document.getElementById('user_badge').style.display = 'block';
+  document.getElementById('disconnectBtn').style.display = 'block';
+  document.getElementById('connectBtn').style.display = 'none';
+  setStep('photos', true);
+  loadAlbums();
+}
+
+function disconnect() {
+  accessToken = null;
+  photos = [];
+  document.getElementById('user_badge').style.display = 'none';
+  document.getElementById('disconnectBtn').style.display = 'none';
+  document.getElementById('connectBtn').style.display = 'block';
+  document.getElementById('auth_status').innerHTML = '';
+  document.getElementById('thumb_preview').innerHTML = '';
+  document.getElementById('photo_status').innerHTML = '';
+  setStep('photos', false);
+  setStep('layout', false);
+  document.getElementById('genBtn').disabled = true;
+  document.getElementById('canvas').style.display = 'none';
+  document.getElementById('preview_placeholder').style.display = 'block';
+  document.getElementById('dl_bar').style.display = 'none';
+  if (google && google.accounts && google.accounts.oauth2)
+    google.accounts.oauth2.revoke(accessToken || '', () => {});
+}
+
+// ============================================================
+//  CATEGORY TOGGLE
+// ============================================================
+function toggleCat(el) {
+  const cat = el.dataset.cat;
+  if (cat === '') {
+    // "すべて" chip
+    selectedCats.clear();
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+    el.classList.add('on');
+  } else {
+    document.querySelectorAll('.chip[data-cat=""]').forEach(c => c.classList.remove('on'));
+    el.classList.toggle('on');
+    if (el.classList.contains('on')) {
+      selectedCats.add(cat);
+    } else {
+      selectedCats.delete(cat);
+    }
+    if (selectedCats.size === 0) {
+      document.querySelector('.chip[data-cat=""]').classList.add('on');
+    }
+  }
+}
+
+function onAlbumChange() {
+  selectedAlbumId = document.getElementById('album_sel').value;
+}
+
+// ============================================================
+//  LOAD ALBUMS
+// ============================================================
+async function loadAlbums() {
+  try {
+    const res = await fetch('https://photoslibrary.googleapis.com/v1/albums?pageSize=50', {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const sel = document.getElementById('album_sel');
+    (data.albums || []).forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = `${a.title} (${a.mediaItemsCount || '?'}枚)`;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+// ============================================================
+//  LOAD PHOTOS
+// ============================================================
+async function loadPhotos() {
+  if (!accessToken) return;
+  const count = +document.getElementById('photo_count').value;
+  const st = document.getElementById('photo_status');
+  showStatus(st, '写真を取得中...', 'info');
+  document.getElementById('thumb_preview').innerHTML = '';
+  photos = [];
+
+  try {
+    let fetched = [];
+    let pageToken = '';
+    const maxPages = Math.ceil(count / 100);
+
+    for (let page = 0; page < maxPages && fetched.length < count; page++) {
+      let body, url;
+
+      if (selectedAlbumId) {
+        url = 'https://photoslibrary.googleapis.com/v1/mediaItems:search';
+        body = { albumId: selectedAlbumId, pageSize: 100 };
+      } else if (selectedCats.size > 0) {
+        url = 'https://photoslibrary.googleapis.com/v1/mediaItems:search';
+        body = {
+          pageSize: 100,
+          filters: {
+            contentFilter: { includedContentCategories: [...selectedCats] },
+            mediaTypeFilter: { mediaTypes: ['PHOTO'] }
+          }
+        };
+      } else {
+        url = 'https://photoslibrary.googleapis.com/v1/mediaItems:search';
+        body = { pageSize: 100, filters: { mediaTypeFilter: { mediaTypes: ['PHOTO'] } } };
+      }
+
+      if (pageToken) body.pageToken = pageToken;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'API エラー: ' + res.status);
+      }
+
+      const data = await res.json();
+      const items = (data.mediaItems || []).filter(i => i.mediaMetadata?.photo);
+      fetched = fetched.concat(items);
+      pageToken = data.nextPageToken || '';
+      if (!pageToken) break;
+    }
+
+    // Shuffle
+    fetched = fetched.sort(() => Math.random() - .5).slice(0, count);
+
+    if (!fetched.length) {
+      showStatus(st, '写真が見つかりませんでした。カテゴリを変えてみてください。', 'warn');
+      return;
+    }
+
+    photos = fetched.map(i => ({
+      baseUrl: i.baseUrl,
+      id: i.id,
+      width: +i.mediaMetadata.width,
+      height: +i.mediaMetadata.height
+    }));
+
+    showStatus(st, `✅ ${photos.length}枚の写真を読み込みました`, 'ok');
+    renderThumbs();
+    setStep('layout', true);
+    document.getElementById('genBtn').disabled = false;
+  } catch(e) {
+    showStatus(st, '取得エラー: ' + e.message, 'err');
+  }
+}
+
+function renderThumbs() {
+  const grid = document.getElementById('thumb_preview');
+  grid.innerHTML = '';
+  const cls = document.createElement('div');
+  cls.className = 'thumb-grid';
+  photos.slice(0, 15).forEach(p => {
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.src = p.baseUrl + '=w80-h80-c';
+    img.loading = 'lazy';
+    cls.appendChild(img);
+  });
+  grid.appendChild(cls);
+  if (photos.length > 15) {
+    const more = document.createElement('div');
+    more.style.cssText = 'font-size:11px;color:var(--muted);margin-top:4px;text-align:right';
+    more.textContent = `＋ ${photos.length - 15}枚`;
+    grid.appendChild(more);
+  }
+}
+
+function updateLayoutPreview() {}
+
+// ============================================================
+//  WALLPAPER GENERATION
+// ============================================================
+async function generateWallpaper() {
+  if (!photos.length) return;
+
+  const [rw, rh] = document.getElementById('resolution').value.split('x').map(Number);
+  const cols = +document.getElementById('cols').value;
+  const gap = +document.getElementById('gap').value;
+  const corner = +document.getElementById('corner').value;
+  const dim = +document.getElementById('dim').value;
+  const style = document.getElementById('layout_style').value;
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = rw;
+  canvas.height = rh;
+
+  ctx.fillStyle = '#0a0c12';
+  ctx.fillRect(0, 0, rw, rh);
+
+  document.getElementById('preview_placeholder').style.display = 'none';
+  canvas.style.display = 'block';
+  document.getElementById('dl_bar').style.display = 'none';
+  document.getElementById('progress_area').style.display = 'block';
+  document.getElementById('genBtn').disabled = true;
+
+  let cells;
+  if (style === 'grid') cells = layoutGrid(rw, rh, cols, gap);
+  else if (style === 'brick') cells = layoutBrick(rw, rh, cols, gap);
+  else if (style === 'mosaic') cells = layoutMosaic(rw, rh, cols, gap);
+  else if (style === 'focus') cells = layoutFocus(rw, rh, cols, gap);
+  else cells = layoutGrid(rw, rh, cols, gap);
+
+  const total = cells.length;
+  let done = 0;
+
+  const shuffled = [...photos].sort(() => Math.random() - .5);
+
+  const loadImg = (url) => new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    const photo = shuffled[i % shuffled.length];
+
+    const fw = Math.round(cell.w * 1.5);
+    const fh = Math.round(cell.h * 1.5);
+    const url = `${photo.baseUrl}=w${fw}-h${fh}-c`;
+
+    const img = await loadImg(url);
+    if (img) {
+      drawCoverFit(ctx, img, cell.x, cell.y, cell.w, cell.h, corner);
+    } else {
+      ctx.fillStyle = '#1a1d27';
+      ctx.fillRect(cell.x, cell.y, cell.w, cell.h);
+    }
+
+    done++;
+    const pct = Math.round(done / total * 100);
+    document.getElementById('prog_fill').style.width = pct + '%';
+    document.getElementById('prog_label').textContent = `${done} / ${total} 枚 描画中...`;
+  }
+
+  // Dim overlay
+  if (dim > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${dim / 100})`;
+    ctx.fillRect(0, 0, rw, rh);
+  }
+
+  document.getElementById('progress_area').style.display = 'none';
+  document.getElementById('dl_bar').style.display = 'flex';
+  document.getElementById('res_tag').textContent = `${rw}×${rh}`;
+  document.getElementById('genBtn').disabled = false;
+}
+
+// object-fit: cover を canvas で再現
+function drawCoverFit(ctx, img, x, y, w, h, radius) {
+  const scale = Math.max(w / img.width, h / img.height);
+  const sw = img.width * scale;
+  const sh = img.height * scale;
+  const sx = x + (w - sw) / 2;
+  const sy = y + (h - sh) / 2;
+
+  if (radius > 0) {
+    ctx.save();
+    roundedRect(ctx, x, y, w, h, radius);
+    ctx.clip();
+  }
+  ctx.drawImage(img, sx, sy, sw, sh);
+  if (radius > 0) ctx.restore();
+}
+
+function roundedRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ============================================================
+//  LAYOUT ALGORITHMS
+// ============================================================
+
+// 均等グリッド
+function layoutGrid(W, H, cols, gap) {
+  const cw = (W - gap * (cols + 1)) / cols;
+  const rows = Math.ceil(H / (cw + gap));
+  const ch = (H - gap * (rows + 1)) / rows;
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      cells.push({
+        x: Math.round(gap + c * (cw + gap)),
+        y: Math.round(gap + r * (ch + gap)),
+        w: Math.round(cw),
+        h: Math.round(ch)
+      });
+    }
+  }
+  return cells;
+}
+
+// ブリック（レンガ）
+function layoutBrick(W, H, cols, gap) {
+  const cw = (W - gap * (cols + 1)) / cols;
+  const rows = Math.ceil(H / (cw * 0.6 + gap));
+  const ch = (H - gap * (rows + 1)) / rows;
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    const offset = (r % 2 === 0) ? 0 : (cw + gap) / 2;
+    for (let c = 0; c < cols + 1; c++) {
+      const x = Math.round(gap + c * (cw + gap) - offset);
+      if (x + cw < 0 || x > W) continue;
+      cells.push({
+        x: Math.max(0, x),
+        y: Math.round(gap + r * (ch + gap)),
+        w: Math.min(Math.round(cw), W - Math.max(0, x)),
+        h: Math.round(ch)
+      });
+    }
+  }
+  return cells;
+}
+
+// モザイク（ランダムサイズ: 1×1, 1×2, 2×1, 2×2）
+function layoutMosaic(W, H, cols, gap) {
+  const cw = Math.floor((W - gap * (cols + 1)) / cols);
+  const rows = Math.ceil(H / (cw + gap)) + 2;
+  const grid = Array.from({length: rows}, () => new Array(cols).fill(false));
+  const cells = [];
+
+  const place = (r, c, span) => {
+    for (let dr = 0; dr < span; dr++)
+      for (let dc = 0; dc < span; dc++)
+        if (r + dr < rows && c + dc < cols) grid[r + dr][c + dc] = true;
+    const x = gap + c * (cw + gap);
+    const y = gap + r * (cw + gap);
+    const w = span * cw + (span - 1) * gap;
+    const h = w; // square for mosaic
+    if (x < W && y < H) cells.push({ x, y, w: Math.min(w, W - x), h: Math.min(h, H - y) });
+  };
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c]) continue;
+      // Try 2x2 with 30% chance, 1x2/2x1 with 30%, else 1x1
+      const rnd = Math.random();
+      let span = 1;
+      if (rnd < 0.25 && c + 1 < cols && r + 1 < rows && !grid[r][c+1] && !grid[r+1][c] && !grid[r+1][c+1]) {
+        span = 2;
+      } else if (rnd < 0.45 && c + 1 < cols && !grid[r][c+1]) {
+        // 1 row, 2 cols
+        grid[r][c] = grid[r][c+1] = true;
+        const x = gap + c * (cw + gap);
+        const y = gap + r * (cw + gap);
+        if (x < W && y < H) cells.push({ x, y, w: Math.min(2 * cw + gap, W - x), h: Math.min(cw, H - y) });
+        continue;
+      }
+      place(r, c, span);
+    }
+  }
+  return cells;
+}
+
+// フォーカス: 左に大きな1枚、右にグリッド
+function layoutFocus(W, H, cols, gap) {
+  const focusW = Math.round(W * 0.55);
+  const restW = W - focusW - gap;
+  const subCols = Math.max(2, cols - 3);
+  const cells = [];
+
+  // メイン
+  cells.push({ x: 0, y: 0, w: focusW, h: H });
+
+  // サブグリッド（右側）
+  const sub = layoutGrid(restW, H, subCols, gap);
+  sub.forEach(c => cells.push({ ...c, x: c.x + focusW + gap }));
+
+  return cells;
+}
+
+// ============================================================
+//  DOWNLOAD
+// ============================================================
+function downloadWallpaper() {
+  const canvas = document.getElementById('canvas');
+  const a = document.createElement('a');
+  a.download = `wallpaper_${canvas.width}x${canvas.height}_${Date.now()}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+// ============================================================
+//  INIT
+// ============================================================
+loadClientId();
+</script>
+</body>
+</html>
